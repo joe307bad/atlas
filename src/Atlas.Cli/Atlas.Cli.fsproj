@@ -10,6 +10,8 @@
     <Compile Include="Configuration.fs" />
     <Compile Include="TechnicalIndicators.fs" />
     <Compile Include="Backtesting.fs" />
+    <Compile Include="RiskManagement.fs" />
+    <Compile Include="RealTimeData.fs" />
     <Compile Include="DataReporter.fs" />
     <Compile Include="DataTests.fs" />
     <Compile Include="Program.fs" />

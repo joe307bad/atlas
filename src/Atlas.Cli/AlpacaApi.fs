@@ -17,12 +17,52 @@ type AlpacaDataProvider(config: AlpacaConfig) =
         let env = if config.UsePaper then Environments.Paper else Environments.Live
         env.GetAlpacaDataClient(SecretKey(config.ApiKey, config.SecretKey))
     
-    member _.GetHistoricalBarsAsync(symbol: string, startDate: DateTime, endDate: DateTime, timeframe: BarTimeFrame) : Task<MarketDataPoint[]> =
+    // Get Alpaca server time to ensure proper synchronization
+    member _.GetServerTimeAsync() : Task<DateTime> =
         task {
             try
+                let env = if config.UsePaper then Environments.Paper else Environments.Live
+                let tradingClient = env.GetAlpacaTradingClient(SecretKey(config.ApiKey, config.SecretKey))
+                let! clock = tradingClient.GetClockAsync()
+                return clock.TimestampUtc
+            with
+            | ex ->
+                printfn "Warning: Could not get server time, using local time: %s" ex.Message
+                return DateTime.UtcNow
+        }
+    
+    // Adjust end date to comply with subscription limitations (15-minute delay for free accounts)
+    member this.GetSafeEndDate(requestedEndDate: DateTime) : Task<DateTime> =
+        task {
+            let! serverTime = this.GetServerTimeAsync()
+            let fifteenMinutesAgo = serverTime.AddMinutes(-15.0)
+            
+            if requestedEndDate > fifteenMinutesAgo then
+                printfn "⏰ Adjusting end date to comply with subscription limits (15-min delay)"
+                return fifteenMinutesAgo
+            else
+                return requestedEndDate
+        }
+    
+    member this.GetHistoricalBarsAsync(symbol: string, startDate: DateTime, endDate: DateTime, timeframe: BarTimeFrame) : Task<MarketDataPoint[]> =
+        task {
+            try
+                let! safeEndDate = this.GetSafeEndDate(endDate)
+                
+                // For very recent end dates, omit the end parameter entirely (as suggested in forum)
+                let! serverTime = this.GetServerTimeAsync()
+                let thirtyMinutesAgo = serverTime.AddMinutes(-30.0)
+                
                 let request = 
-                    HistoricalBarsRequest(symbol, startDate, endDate, timeframe)
-                        .WithPageSize(10000u)
+                    if endDate > thirtyMinutesAgo then
+                        printfn "📅 Using earlier end date for %s to avoid subscription limits" symbol
+                        // Use a much earlier end date to avoid subscription issues
+                        let conservativeEndDate = serverTime.AddHours(-1.0)  // 1 hour ago
+                        HistoricalBarsRequest(symbol, startDate, conservativeEndDate, timeframe)
+                            .WithPageSize(10000u)
+                    else
+                        HistoricalBarsRequest(symbol, startDate, safeEndDate, timeframe)
+                            .WithPageSize(10000u)
                 
                 let! response = client.ListHistoricalBarsAsync(request)
                 
