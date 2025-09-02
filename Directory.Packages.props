@@ -1,0 +1,22 @@
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Core F# Libraries -->
+    <PackageVersion Include="FSharp.Core" Version="8.0.300" />
+    <!-- Data Processing -->
+    <PackageVersion Include="FSharp.Data" Version="6.4.0" />
+    <PackageVersion Include="Deedle" Version="3.0.0" />
+    <!-- Machine Learning -->
+    <PackageVersion Include="Microsoft.ML" Version="3.0.1" />
+    <PackageVersion Include="Microsoft.ML.TimeSeries" Version="3.0.1" />
+    <!-- Mathematics -->
+    <PackageVersion Include="MathNet.Numerics" Version="5.0.0" />
+    <PackageVersion Include="MathNet.Numerics.FSharp" Version="5.0.0" />
+    <!-- Financial Libraries -->
+    <PackageVersion Include="Alpaca.Markets" Version="7.2.0" />
+    <!-- Visualization -->
+    <PackageVersion Include="Plotly.NET" Version="4.2.0" />
+  </ItemGroup>
+</Project>

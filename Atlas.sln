@@ -1,0 +1,27 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{3DFAD97C-481A-4334-9CAC-81336E3C6049}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Atlas.Cli", "src\Atlas.Cli\Atlas.Cli.fsproj", "{34DD6702-057C-45F5-9856-9C65D640DC0D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{34DD6702-057C-45F5-9856-9C65D640DC0D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{34DD6702-057C-45F5-9856-9C65D640DC0D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{34DD6702-057C-45F5-9856-9C65D640DC0D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{34DD6702-057C-45F5-9856-9C65D640DC0D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{34DD6702-057C-45F5-9856-9C65D640DC0D} = {3DFAD97C-481A-4334-9CAC-81336E3C6049}
+	EndGlobalSection
+EndGlobal
