@@ -9,6 +9,7 @@
     <Compile Include="AlpacaApi.fs" />
     <Compile Include="Configuration.fs" />
     <Compile Include="TechnicalIndicators.fs" />
+    <Compile Include="Backtesting.fs" />
     <Compile Include="DataReporter.fs" />
     <Compile Include="DataTests.fs" />
     <Compile Include="Program.fs" />

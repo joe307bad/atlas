@@ -4,6 +4,7 @@ open TradingStrategy.Data
 open TradingStrategy.AlpacaApi
 open TradingStrategy.Configuration
 open TradingStrategy.TechnicalIndicators
+open TradingStrategy.Backtesting
 open TradingStrategy.DataReporter
 
 let executeTrading () =
@@ -44,14 +45,27 @@ let executeTrading () =
                     marketDataResults
                     |> Array.map calculateAllIndicators
                 
-                printfn "📊 Phase 3: Machine Learning models preparation..."
-                printfn "   • Technical indicators successfully calculated"
-                printfn "   • ML training data pipeline ready"
-                printfn "   • Ensemble model architecture designed"
-                printfn "   ✅ Ready for model training when live trading begins"
+                printfn "🔄 Phase 4: Running backtesting engine..."
                 
-                printfn "📋 Generating comprehensive technical analysis report..."
-                let report = generateMarketDataWithMLReport marketDataResults indicatorsResults [||]
+                // Create backtesting configuration
+                let backtestConfig = {
+                    StartingCapital = 100000m  // $100,000 starting capital
+                    CommissionPerTrade = 1m    // $1 per trade
+                    CommissionPercentage = 0.005m  // 0.005% per trade
+                    SlippageBasisPoints = 5m   // 5 basis points slippage
+                    MaxPositionSize = 0.20m    // Max 20% of portfolio per position
+                    RiskPerTrade = 0.02m       // Risk 2% per trade
+                }
+                
+                printfn "   • Starting capital: $%s" (backtestConfig.StartingCapital.ToString("N0"))
+                printfn "   • Commission: $%.2f + %.3f%% per trade" backtestConfig.CommissionPerTrade backtestConfig.CommissionPercentage
+                printfn "   • Max position size: %.0f%% of portfolio" (backtestConfig.MaxPositionSize * 100m)
+                
+                // Run backtest
+                let backtestResult = runBacktest backtestConfig marketDataResults indicatorsResults
+                
+                printfn "📋 Generating comprehensive backtesting report..."
+                let report = generateMarketDataWithBacktestReport marketDataResults indicatorsResults (Some backtestResult)
                 printfn "%s" report
                 
                 return 0
