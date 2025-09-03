@@ -8,6 +8,9 @@ open TradingStrategy.Backtesting
 open TradingStrategy.DataReporter
 open TradingStrategy.RiskManagement
 open TradingStrategy.RealTimeData
+open TradingStrategy.FakeDataGenerator
+open TradingStrategy.DataStream
+open TradingStrategy.TradingEngine
 
 let executeTrading () =
     task {
@@ -119,7 +122,158 @@ let executeTrading () =
                 return 1
     }
 
-let executeLiveTrading (useNightTimeSimulation: bool) =
+let rec executeTradingWithDataStream (simulationMode: string option) =
+    task {
+        match simulationMode with
+        | Some csvPath ->
+            printfn "🚀 ATLAS TRADING STRATEGY - CSV SIMULATION MODE"
+            printfn "═══════════════════════════════════════════════════════════════"
+            
+            // Check if file exists
+            if not (System.IO.File.Exists(csvPath)) then
+                printfn "❌ ERROR: CSV file not found: %s" csvPath
+                return 1
+            else
+                printfn "📁 Loading simulation data from: %s" csvPath
+                
+                let config = loadConfiguration()
+                
+                match validateConfiguration config with
+                | Error errors ->
+                    printfn ""
+                    errors |> Array.iter (printfn "%s")
+                    printfn ""
+                    printConfigurationInstructions()
+                    return 1
+                    
+                | Ok validConfig ->
+                    printConfigurationSummary validConfig
+                    
+                    try
+                        // Try to detect symbol from CSV filename or use first column
+                        let symbol = 
+                            if csvPath.Contains("AAPL") then "AAPL"
+                            elif csvPath.Contains("TSLA") then "TSLA"
+                            elif csvPath.Contains("MSFT") then "MSFT"
+                            elif csvPath.Contains("META") then "META"
+                            else 
+                                // Try to read symbol from CSV
+                                let lines = System.IO.File.ReadAllLines(csvPath)
+                                if lines.Length > 1 then
+                                    let firstDataLine = lines.[1].Split(',')
+                                    if firstDataLine.Length >= 2 then firstDataLine.[1] else "UNKNOWN"
+                                else "UNKNOWN"
+                        
+                        printfn "📊 Detected symbol: %s" symbol
+                        
+                        // Create real-time data provider with detected symbol
+                        let provider = createRealTimeDataProvider [| symbol |] 1000
+                        
+                        // Initialize trading engine
+                        let tradingRules = createDefaultRules ()
+                        let mutable tradingState = createInitialState 10000m  // Start with $10,000
+                        
+                        printfn "💰 Trading Configuration:"
+                        printfn "   • Starting Cash: $%.2f" tradingState.Cash
+                        printfn "   • Max Position Size: %d shares" tradingRules.Strategy.MaxPositionSize
+                        printfn "   • Stop Loss: %.1f%%" (tradingRules.Strategy.MaxLossPercent * 100m)
+                        printfn ""
+                        
+                        // Create CSV simulation stream
+                        let streamConfig = 
+                            Map.ofList [
+                                "csvPath", csvPath
+                                "interval", "1000"  // 1 second intervals
+                            ]
+                        
+                        let dataStream = createDataStream "csv" streamConfig
+                        
+                        // Connect to stream
+                        do! dataStream.ConnectAsync()
+                        
+                        // Subscribe to events with trading logic
+                        dataStream.OnTick.Add(fun tick ->
+                            // Process incoming tick through the provider
+                            processIncomingTick provider tick |> ignore
+                            
+                            // Analyze tick and make trading decisions
+                            let (newState, tradeAction) = analyzeTickAndTrade tick tradingRules tradingState
+                            tradingState <- newState
+                            
+                            // Print trade actions and basic price info
+                            match tradeAction with 
+                            | Hold -> () // Don't spam with holds
+                            | _ -> printTradeAction tradeAction symbol
+                        )
+                        
+                        dataStream.OnBar.Add(fun bar ->
+                            // Process bar data
+                            match provider.DataBuffer.TryGetValue(symbol) with
+                            | true, buffer -> addBarToBuffer buffer bar
+                            | false, _ -> ()
+                        )
+                        
+                        // Subscribe to symbols
+                        do! dataStream.SubscribeToSymbols([| symbol |])
+                        
+                        // Monitor the stream
+                        let mutable iteration = 0
+                        while not provider.CancellationToken.Token.IsCancellationRequested && iteration < 60 do
+                            do! Task.Delay(1000)
+                            iteration <- iteration + 1
+                            
+                            let (state, totalTicks, avgQuality, symbolStatuses) = getDataStreamStatus provider
+                            
+                            printfn "\n📊 SIMULATION STATUS (Second %d/60)" iteration
+                            printfn "══════════════════════════════════════════════════════"
+                            printfn "Stream Type: CSV_SIMULATION"
+                            printfn "Total Ticks Processed: %d" totalTicks
+                            
+                            symbolStatuses
+                            |> Array.iter (fun (symbol, tickCount, quality, lastUpdate) ->
+                                let freshness = 
+                                    if lastUpdate = DateTime.MinValue then "No Data"
+                                    elif (DateTime.UtcNow - lastUpdate).TotalMinutes > 30.0 then
+                                        // This is simulation data with historical timestamps
+                                        sprintf "Sim Data (%s)" (lastUpdate.ToString("HH:mm:ss"))
+                                    else 
+                                        sprintf "%.1fs ago" (DateTime.UtcNow - lastUpdate).TotalSeconds
+                                
+                                printfn "   %s: %d ticks, %.0f%% quality, %s" 
+                                        symbol tickCount (quality * 100m) freshness
+                            )
+                            
+                            // Display trading status every 5 seconds
+                            if iteration % 5 = 0 then
+                                printfn ""
+                                printfn "💰 TRADING STATUS:"
+                                printfn "   Cash: $%.2f | P&L: $%.2f | Trades: %d | Positions: %d" 
+                                        tradingState.Cash tradingState.TotalPnL tradingState.Trades.Length tradingState.Positions.Count
+                        
+                        // Disconnect
+                        do! dataStream.DisconnectAsync()
+                        
+                        printfn "\n✅ CSV SIMULATION COMPLETED"
+                        printfn "═══════════════════════════════════════════════════════════════"
+                        printfn "Simulation ran for 60 seconds emitting data from: %s" csvPath
+                        
+                        // Final trading summary
+                        printTradingSummary tradingState
+                        
+                        return 0
+                        
+                    with
+                    | ex ->
+                        printfn "❌ ERROR: Failed to run CSV simulation"
+                        printfn "   Details: %s" ex.Message
+                        return 1
+                    
+        | _ ->
+            // Fall back to original implementation for other modes
+            return! executeLiveTrading (simulationMode.IsNone)
+    }
+
+and executeLiveTrading (useNightTimeSimulation: bool) =
     task {
         printfn "🚀 ATLAS LIVE TRADING STRATEGY - REAL-TIME EXECUTION"
         printfn "═══════════════════════════════════════════════════════════════"
@@ -319,13 +473,29 @@ let main args =
     match args with
     | [| "execute-trading" |] -> 
         executeTrading().Result
+    | [| "execute-trading"; arg |] when arg.StartsWith("--simulation=") ->
+        let csvPath = arg.Substring("--simulation=".Length)
+        executeTradingWithDataStream(Some csvPath).Result  // CSV simulation mode
     | [| "execute-live-trading" |] ->
         executeLiveTrading(false).Result  // Default to live paper API
     | [| "execute-live-trading"; "--nighttime-simulation" |] ->
         executeLiveTrading(true).Result   // Use nighttime simulation
+    | [| "generate-fake-data" |] ->
+        printfn "🎲 ATLAS FAKE DATA GENERATOR"
+        printfn "═══════════════════════════════════════════════════════════════"
+        let outputDir = "fake_data"
+        generateMultipleScenarios outputDir
+        0
     | _ -> 
         printfn "Usage:"
-        printfn "  Atlas.Cli execute-trading                            - Pull real data from Alpaca and generate report"
-        printfn "  Atlas.Cli execute-live-trading                       - Live paper trading (requires market open)"
-        printfn "  Atlas.Cli execute-live-trading --nighttime-simulation - Nighttime simulation with fake data"
+        printfn "  Atlas.Cli execute-trading                                  - Pull real data from Alpaca and generate report"
+        printfn "  Atlas.Cli execute-trading --simulation=<csv_file>          - Use CSV simulation with specified file"
+        printfn "  Atlas.Cli execute-live-trading                             - Live paper trading (requires market open)"
+        printfn "  Atlas.Cli execute-live-trading --nighttime-simulation      - Nighttime simulation with fake data"
+        printfn "  Atlas.Cli generate-fake-data                               - Generate CSV files with fake market data scenarios"
+        printfn ""
+        printfn "Examples:"
+        printfn "  Atlas.Cli execute-trading --simulation=fake_data/fake_data_1min_updown.csv"
+        printfn "  Atlas.Cli execute-trading --simulation=fake_data/fake_data_5min_volatile.csv"
+        printfn "  Atlas.Cli execute-trading --simulation=/path/to/your/data.csv"
         1

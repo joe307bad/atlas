@@ -12,9 +12,14 @@
     <Compile Include="Backtesting.fs" />
     <Compile Include="RiskManagement.fs" />
     <Compile Include="RealTimeData.fs" />
+    <Compile Include="TradingEngine.fs" />
+    <Compile Include="DataStream.fs" />
     <Compile Include="DataReporter.fs" />
+    <Compile Include="FakeDataGenerator.fs" />
     <Compile Include="DataTests.fs" />
     <Compile Include="Program.fs" />
+    <Content Include=".env" />
+    <Content Include=".env.example" />
   </ItemGroup>
 
   <ItemGroup>

@@ -322,9 +322,17 @@ let updateStreamingIndicators (symbol: string) (latestBar: MarketDataPoint) (his
 // Data quality monitoring
 let calculateDataQuality (buffer: RealTimeDataBuffer) (symbol: string) (expectedUpdateInterval: TimeSpan) =
     let now = DateTime.UtcNow
+    let allTicks = buffer.Ticks.ToArray()
+    
+    // For simulation data (old timestamps), use all available ticks
+    // For live data (recent timestamps), only use recent ticks
     let recentTicks = 
-        buffer.Ticks.ToArray() 
-        |> Array.filter (fun t -> now - t.Timestamp < TimeSpan.FromMinutes(5.0))
+        let hasRecentData = allTicks |> Array.exists (fun t -> now - t.Timestamp < TimeSpan.FromMinutes(5.0))
+        if hasRecentData then
+            allTicks |> Array.filter (fun t -> now - t.Timestamp < TimeSpan.FromMinutes(5.0))
+        else
+            // If no recent data, this is likely simulation - use all ticks
+            allTicks
     
     let lastUpdate = 
         if recentTicks.Length > 0 then
