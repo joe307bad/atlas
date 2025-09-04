@@ -32,7 +32,7 @@ let private getEnvironmentVariable (name: string) (defaultValue: string) =
 let loadConfiguration() : TradingConfig =
     // Try to load .env file first
     loadEnvFile()
-    
+
     {
         AlpacaApiKey = getEnvironmentVariable "ALPACA_API_KEY" "your-api-key-here"
         AlpacaSecretKey = getEnvironmentVariable "ALPACA_SECRET_KEY" "your-secret-key-here"
@@ -45,19 +45,19 @@ let loadConfiguration() : TradingConfig =
 
 let validateConfiguration (config: TradingConfig) : Result<TradingConfig, string[]> =
     let errors = ResizeArray<string>()
-    
+
     if config.AlpacaApiKey = "your-api-key-here" then
         errors.Add("❌ ALPACA_API_KEY environment variable not set")
-    
+
     if config.AlpacaSecretKey = "your-secret-key-here" then
         errors.Add("❌ ALPACA_SECRET_KEY environment variable not set")
-    
+
     if config.DefaultSymbols.Length = 0 then
         errors.Add("❌ No default symbols configured")
-    
+
     if config.DataStartDate >= config.DataEndDate then
         errors.Add("❌ Start date must be before end date")
-    
+
     if errors.Count = 0 then
         Ok config
     else
@@ -71,7 +71,7 @@ let printConfigurationInstructions() =
 To use real Alpaca market data, you need to set up your API credentials:
 
 1️⃣  Create an Alpaca account at https://alpaca.markets/
-2️⃣  Navigate to your account dashboard to generate API credentials  
+2️⃣  Navigate to your account dashboard to generate API credentials
 
 3️⃣  OPTION A - Using .env file (Recommended):
    • Edit the .env file in the project root
@@ -79,7 +79,7 @@ To use real Alpaca market data, you need to set up your API credentials:
    • The system will automatically load them
 
 3️⃣  OPTION B - Set environment variables manually:
-   
+
    macOS/Linux:
    export ALPACA_API_KEY="your-actual-api-key"
    export ALPACA_SECRET_KEY="your-actual-secret-key"
@@ -109,11 +109,5 @@ let printConfigurationSummary (config: TradingConfig) =
    Alpaca API Key: {if config.AlpacaApiKey <> "your-api-key-here" then "✅ Configured" else "❌ Missing"}
    Alpaca Secret Key: {if config.AlpacaSecretKey <> "your-secret-key-here" then "✅ Configured" else "❌ Missing"}
    Paper Trading: {if config.UsePaperTrading then "✅ Enabled (Safe)" else "⚠️ Live Trading"}
-
-📊 Data Parameters:
-   Symbols: {String.concat ", " config.DefaultSymbols}
-   Date Range: {config.DataStartDate.ToString("yyyy-MM-dd")} to {config.DataEndDate.ToString("yyyy-MM-dd")}
-   Resolution: {config.DefaultResolution.TotalMinutes.ToString("F0")}-minute bars
-   Days of Data: {(config.DataEndDate - config.DataStartDate).TotalDays.ToString("F0")}
 ═══════════════════════════════════════════════════════════════
     """
