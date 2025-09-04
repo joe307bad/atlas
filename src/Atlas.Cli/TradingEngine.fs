@@ -32,18 +32,18 @@ type TradingState = {
     PriceHistory: Map<string, decimal list>  // Track price history for trend analysis
 }
 
-// Extend the existing TradingStrategy type
+open TradingStrategy.Configuration
+
+// Enhanced trading rules using configuration
 type EnhancedTradingRules = {
-    Strategy: TradingStrategy       // Reuse existing strategy
-    TrendThreshold: decimal         // Price move threshold to trigger action
+    Config: TradingConfig           // Configuration with all trading rules
     MaxPositionsPerSymbol: int      // Max concurrent positions per symbol
     MinCash: decimal               // Minimum cash to maintain
     PriceHistoryLength: int        // How many prices to keep for trend analysis
 }
 
-let createDefaultRules () = {
-    Strategy = createTradingStrategy ()  // Reuse existing strategy creation
-    TrendThreshold = 0.0005m             // 0.05% price move to consider (very sensitive)
+let createRulesFromConfig (config: TradingConfig) = {
+    Config = config
     MaxPositionsPerSymbol = 1            // One position per symbol
     MinCash = 1000m                      // Keep $1000 cash
     PriceHistoryLength = 5               // Keep 5 price points for faster reactions
@@ -73,7 +73,7 @@ let shouldBuy (tick: TickData) (priceHistory: decimal list) (rules: EnhancedTrad
     // Check if we already have a position in this symbol
     let hasPosition = Map.containsKey tick.Symbol state.Positions
     
-    // Simple approach: buy if price increased more than threshold
+    // Buy if price increased more than configured threshold
     let simpleUptrend = 
         if priceHistory.Length >= 2 then
             let recent = priceHistory.Head
@@ -83,10 +83,10 @@ let shouldBuy (tick: TickData) (priceHistory: decimal list) (rules: EnhancedTrad
             
             // Debug output - let's see what's happening
             if abs percentChange > 0.01m then
-                printfn "TRADE ANALYSIS: %s %.2f→%.2f (%.3f%%) | Cash: $%.0f | HasCash: %b | Pos: %b | Trend: %b | Threshold: %.3f%%" 
-                        tick.Symbol older recent percentChange state.Cash hasEnoughCash hasPosition (priceChange >= rules.TrendThreshold) (rules.TrendThreshold * 100m)
+                printfn "TRADE ANALYSIS: %s %.2f→%.2f (%.3f%%) | Cash: $%.0f | HasCash: %b | Pos: %b | Trend: %b | Threshold: %.4f%%" 
+                        tick.Symbol older recent percentChange state.Cash hasEnoughCash hasPosition (priceChange >= rules.Config.BuyTriggerPercent) (rules.Config.BuyTriggerPercent * 100m)
             
-            priceChange >= rules.TrendThreshold
+            priceChange >= rules.Config.BuyTriggerPercent
         else false
     
     let result = hasEnoughCash && not hasPosition && simpleUptrend
@@ -99,16 +99,15 @@ let shouldBuy (tick: TickData) (priceHistory: decimal list) (rules: EnhancedTrad
     result
 
 let shouldSell (position: TradingPosition) (tick: TickData) (rules: EnhancedTradingRules) : bool =
-    // Reuse existing stop loss logic
-    let stopLossSignal = checkStopLoss position rules.Strategy
+    // Check stop loss condition using config
+    let lossPercent = (position.EntryPrice - position.CurrentPrice) / position.EntryPrice
+    let stopLossTriggered = lossPercent >= rules.Config.StopLossPercent
     
-    // Reuse existing take profit logic
-    let takeProfitSignal = checkTakeProfit position
+    // Check take profit condition using config  
+    let profitPercent = (position.CurrentPrice - position.EntryPrice) / position.EntryPrice
+    let takeProfitTriggered = profitPercent >= rules.Config.TakeProfitPercent
     
-    // Time-based exit disabled for simulations
-    let timeBasedExit = false
-    
-    stopLossSignal.IsSome || takeProfitSignal.IsSome || timeBasedExit
+    stopLossTriggered || takeProfitTriggered
 
 let executeBuy (tick: TickData) (shares: int) (rules: EnhancedTradingRules) (state: TradingState) (orderExecutor: IOrderExecutor) : Task<TradingState * string> =
     task {
@@ -222,11 +221,14 @@ let analyzeTickAndTrade (tick: TickData) (rules: EnhancedTradingRules) (state: T
         
         // Check if we should sell
         if shouldSell updatedPosition tick rules then
+            let lossPercent = (updatedPosition.EntryPrice - updatedPosition.CurrentPrice) / updatedPosition.EntryPrice
+            let profitPercent = (updatedPosition.CurrentPrice - updatedPosition.EntryPrice) / updatedPosition.EntryPrice
+            
             let reason = 
-                let stopLoss = checkStopLoss updatedPosition rules.Strategy
-                let takeProfit = checkTakeProfit updatedPosition
-                if stopLoss.IsSome then "Stop loss triggered"
-                elif takeProfit.IsSome then "Take profit triggered" 
+                if lossPercent >= rules.Config.StopLossPercent then 
+                    sprintf "Stop loss triggered (%.2f%% loss)" (lossPercent * 100m)
+                elif profitPercent >= rules.Config.TakeProfitPercent then 
+                    sprintf "Take profit triggered (%.4f%% profit)" (profitPercent * 100m)
                 else "Other exit condition"
             
             let! finalState = executeSell updatedPosition tick reason stateWithUpdatedPosition orderExecutor
@@ -245,7 +247,7 @@ let analyzeTickAndTrade (tick: TickData) (rules: EnhancedTradingRules) (state: T
                 printfn "SHOULD BUY CHECK: %s %.2f→%.2f (%.3f%%) -> %b" tick.Symbol older recent percentChange shouldBuyResult
         
         if shouldBuyResult then
-            let sharesToBuy = min rules.Strategy.MaxPositionSize (int (updatedState.Cash / tick.Price))
+            let sharesToBuy = min rules.Config.MaxPositionSize (int (updatedState.Cash / tick.Price))
             printfn "BUY SIGNAL: Should buy %d shares at $%.2f (total: $%.2f)" sharesToBuy tick.Price (decimal sharesToBuy * tick.Price)
             if sharesToBuy > 0 then
                 let! (finalState, reason) = executeBuy tick sharesToBuy rules updatedState orderExecutor

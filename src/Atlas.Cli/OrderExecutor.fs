@@ -39,18 +39,63 @@ type MockOrderExecutor() =
 
         member _.GetExecutorType() = "MOCK_SIMULATION"
 
-// Alpaca order executor for live trading
+// Alpaca order executor for live/paper trading
 type AlpacaOrderExecutor(alpacaClient: Alpaca.Markets.IAlpacaTradingClient) =
     interface IOrderExecutor with
         member _.ExecuteBuyOrder symbol shares price =
             task {
                 try
-                    // TODO: Implement actual Alpaca API calls
-                    // For now, just simulate the order
-                    printfn "📡 ALPACA BUY ORDER: Would submit %s %d shares @ $%.2f (market order)" symbol shares price
-                    do! Task.Delay(100) // Simulate order processing delay
-                    printfn "✅ ALPACA BUY SIMULATED: %s %d shares @ $%.2f" symbol shares price
-                    return Success (price, DateTime.UtcNow)
+                    // Create market order request
+                    let orderRequest = 
+                        Alpaca.Markets.MarketOrder.Buy(symbol, int64 shares)
+                    orderRequest.Duration <- Alpaca.Markets.TimeInForce.Day
+                    
+                    printfn "📡 ALPACA BUY ORDER: Submitting %s %d shares (market order)" symbol shares
+                    
+                    // Submit the order
+                    let! order = alpacaClient.PostOrderAsync(orderRequest)
+                    
+                    // Wait for order to be filled (with timeout)
+                    let mutable filledOrder: Alpaca.Markets.IOrder = order
+                    let mutable attempts = 0
+                    let maxAttempts = 30  // 30 seconds timeout
+                    
+                    while filledOrder.OrderStatus <> Alpaca.Markets.OrderStatus.Filled && 
+                          filledOrder.OrderStatus <> Alpaca.Markets.OrderStatus.PartiallyFilled &&
+                          attempts < maxAttempts do
+                        do! Task.Delay(1000)  // Wait 1 second
+                        let! updatedOrder = alpacaClient.GetOrderAsync(order.OrderId)
+                        filledOrder <- updatedOrder
+                        attempts <- attempts + 1
+                    
+                    match filledOrder.OrderStatus with
+                    | Alpaca.Markets.OrderStatus.Filled ->
+                        let executionPrice = 
+                            if filledOrder.AverageFillPrice.HasValue then 
+                                decimal filledOrder.AverageFillPrice.Value 
+                            else 
+                                price
+                        printfn "✅ ALPACA BUY FILLED: %s %d shares @ $%.2f" symbol shares executionPrice
+                        return Success (executionPrice, filledOrder.FilledAtUtc.GetValueOrDefault())
+                    
+                    | Alpaca.Markets.OrderStatus.PartiallyFilled ->
+                        let executionPrice = 
+                            if filledOrder.AverageFillPrice.HasValue then 
+                                decimal filledOrder.AverageFillPrice.Value 
+                            else 
+                                price
+                        printfn "⚠️  ALPACA BUY PARTIALLY FILLED: %s %d/%d shares @ $%.2f" 
+                                symbol (int filledOrder.FilledQuantity) shares executionPrice
+                        return Success (executionPrice, filledOrder.FilledAtUtc.GetValueOrDefault())
+                    
+                    | _ ->
+                        printfn "❌ ALPACA BUY FAILED: Order status is %A" filledOrder.OrderStatus
+                        // Try to cancel the order if it's still open
+                        if filledOrder.OrderStatus = Alpaca.Markets.OrderStatus.New || 
+                           filledOrder.OrderStatus = Alpaca.Markets.OrderStatus.Accepted then
+                            let! cancelResp = alpacaClient.CancelOrderAsync(filledOrder.OrderId)
+                            ()
+                        return Failed (sprintf "Order not filled after %d seconds (Status: %A)" maxAttempts filledOrder.OrderStatus)
 
                 with
                 | ex ->
@@ -61,12 +106,57 @@ type AlpacaOrderExecutor(alpacaClient: Alpaca.Markets.IAlpacaTradingClient) =
         member _.ExecuteSellOrder symbol shares price =
             task {
                 try
-                    // TODO: Implement actual Alpaca API calls
-                    // For now, just simulate the order
-                    printfn "📡 ALPACA SELL ORDER: Would submit %s %d shares @ $%.2f (market order)" symbol shares price
-                    do! Task.Delay(100) // Simulate order processing delay
-                    printfn "✅ ALPACA SELL SIMULATED: %s %d shares @ $%.2f" symbol shares price
-                    return Success (price, DateTime.UtcNow)
+                    // Create market order request
+                    let orderRequest = 
+                        Alpaca.Markets.MarketOrder.Sell(symbol, int64 shares)
+                    orderRequest.Duration <- Alpaca.Markets.TimeInForce.Day
+                    
+                    printfn "📡 ALPACA SELL ORDER: Submitting %s %d shares (market order)" symbol shares
+                    
+                    // Submit the order
+                    let! order = alpacaClient.PostOrderAsync(orderRequest)
+                    
+                    // Wait for order to be filled (with timeout)
+                    let mutable filledOrder: Alpaca.Markets.IOrder = order
+                    let mutable attempts = 0
+                    let maxAttempts = 30  // 30 seconds timeout
+                    
+                    while filledOrder.OrderStatus <> Alpaca.Markets.OrderStatus.Filled && 
+                          filledOrder.OrderStatus <> Alpaca.Markets.OrderStatus.PartiallyFilled &&
+                          attempts < maxAttempts do
+                        do! Task.Delay(1000)  // Wait 1 second
+                        let! updatedOrder = alpacaClient.GetOrderAsync(order.OrderId)
+                        filledOrder <- updatedOrder
+                        attempts <- attempts + 1
+                    
+                    match filledOrder.OrderStatus with
+                    | Alpaca.Markets.OrderStatus.Filled ->
+                        let executionPrice = 
+                            if filledOrder.AverageFillPrice.HasValue then 
+                                decimal filledOrder.AverageFillPrice.Value 
+                            else 
+                                price
+                        printfn "✅ ALPACA SELL FILLED: %s %d shares @ $%.2f" symbol shares executionPrice
+                        return Success (executionPrice, filledOrder.FilledAtUtc.GetValueOrDefault())
+                    
+                    | Alpaca.Markets.OrderStatus.PartiallyFilled ->
+                        let executionPrice = 
+                            if filledOrder.AverageFillPrice.HasValue then 
+                                decimal filledOrder.AverageFillPrice.Value 
+                            else 
+                                price
+                        printfn "⚠️  ALPACA SELL PARTIALLY FILLED: %s %d/%d shares @ $%.2f" 
+                                symbol (int filledOrder.FilledQuantity) shares executionPrice
+                        return Success (executionPrice, filledOrder.FilledAtUtc.GetValueOrDefault())
+                    
+                    | _ ->
+                        printfn "❌ ALPACA SELL FAILED: Order status is %A" filledOrder.OrderStatus
+                        // Try to cancel the order if it's still open
+                        if filledOrder.OrderStatus = Alpaca.Markets.OrderStatus.New || 
+                           filledOrder.OrderStatus = Alpaca.Markets.OrderStatus.Accepted then
+                            let! cancelResp = alpacaClient.CancelOrderAsync(filledOrder.OrderId)
+                            ()
+                        return Failed (sprintf "Order not filled after %d seconds (Status: %A)" maxAttempts filledOrder.OrderStatus)
 
                 with
                 | ex ->
@@ -74,7 +164,7 @@ type AlpacaOrderExecutor(alpacaClient: Alpaca.Markets.IAlpacaTradingClient) =
                     return Failed ex.Message
             }
 
-        member _.GetExecutorType() = "ALPACA_LIVE"
+        member _.GetExecutorType() = "ALPACA_PAPER"  // Always paper for safety
 
 // Factory function to create appropriate executor
 let createOrderExecutor (isSimulation: bool) (alpacaClientOpt: Alpaca.Markets.IAlpacaTradingClient option) : IOrderExecutor =

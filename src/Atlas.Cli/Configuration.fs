@@ -11,18 +11,34 @@ type TradingConfig = {
     DataStartDate: DateTime
     DataEndDate: DateTime
     DefaultResolution: TimeSpan
+    // Trading Rules
+    BuyTriggerPercent: decimal      // Buy when stock goes up by this %
+    TakeProfitPercent: decimal      // Sell for profit when stock goes up by this %
+    StopLossPercent: decimal        // Sell for loss when stock goes down by this %
+    MaxPositionSize: int            // Maximum shares per position
 }
 
 let private loadEnvFile() =
-    let envFile = Path.Combine(Directory.GetCurrentDirectory(), ".env")
-    if File.Exists(envFile) then
-        File.ReadAllLines(envFile)
+    // Try multiple locations for .env file
+    let possiblePaths = [
+        Path.Combine(Directory.GetCurrentDirectory(), "src", "Atlas.Cli", ".env")
+        Path.Combine(Directory.GetCurrentDirectory(), ".env")
+        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ".env")
+    ]
+    
+    let envFile = possiblePaths |> List.tryFind File.Exists
+    
+    match envFile with
+    | Some path ->
+        printfn "📁 Loading configuration from: %s" path
+        File.ReadAllLines(path)
         |> Array.iter (fun line ->
             let trimmed = line.Trim()
             if not (trimmed.StartsWith("#") || String.IsNullOrEmpty(trimmed)) then
                 match trimmed.Split('=', 2) with
                 | [| key; value |] -> Environment.SetEnvironmentVariable(key, value)
                 | _ -> ())
+    | None -> ()
 
 let private getEnvironmentVariable (name: string) (defaultValue: string) =
     match Environment.GetEnvironmentVariable(name) with
@@ -41,6 +57,11 @@ let loadConfiguration() : TradingConfig =
         DataStartDate = DateTime.Now.AddDays(-60.0) // Last 60 days
         DataEndDate = DateTime.Now.AddDays(-1.0) // Yesterday (avoid partial day data)
         DefaultResolution = TimeSpan.FromMinutes(5.0) // 5-minute bars
+        // Trading Rules from environment variables
+        BuyTriggerPercent = decimal (getEnvironmentVariable "BUY_TRIGGER_PERCENT" "0.0001") / 100m  // Default: 0.0001%
+        TakeProfitPercent = decimal (getEnvironmentVariable "TAKE_PROFIT_PERCENT" "0.0001") / 100m   // Default: 0.0001%
+        StopLossPercent = decimal (getEnvironmentVariable "STOP_LOSS_PERCENT" "1.0") / 100m          // Default: 1.0%
+        MaxPositionSize = int (getEnvironmentVariable "MAX_POSITION_SIZE" "100")                     // Default: 100 shares
     }
 
 let validateConfiguration (config: TradingConfig) : Result<TradingConfig, string[]> =
@@ -58,10 +79,37 @@ let validateConfiguration (config: TradingConfig) : Result<TradingConfig, string
     if config.DataStartDate >= config.DataEndDate then
         errors.Add("❌ Start date must be before end date")
 
+    // Validate trading rule parameters
+    if config.BuyTriggerPercent < 0m then
+        errors.Add("❌ BUY_TRIGGER_PERCENT must be positive")
+    
+    if config.TakeProfitPercent <= 0m then
+        errors.Add("❌ TAKE_PROFIT_PERCENT must be greater than 0")
+        
+    if config.StopLossPercent <= 0m then
+        errors.Add("❌ STOP_LOSS_PERCENT must be greater than 0")
+        
+    if config.MaxPositionSize <= 0 then
+        errors.Add("❌ MAX_POSITION_SIZE must be greater than 0")
+
     if errors.Count = 0 then
         Ok config
     else
         Error (errors.ToArray())
+
+let printConfigurationSummary (config: TradingConfig) =
+    printfn "⚙️  CONFIGURATION SUMMARY"
+    printfn "═══════════════════════════════════════════════════════════════"
+    printfn "🔑 API Configuration:"
+    printfn "   Alpaca API Key: ✅ Configured"
+    printfn "   Alpaca Secret Key: ✅ Configured"
+    printfn "   Paper Trading: %s" (if config.UsePaperTrading then "✅ Enabled (Safe)" else "⚠️  LIVE TRADING")
+    printfn "📈 Trading Rules:"
+    printfn "   Buy Trigger: %.4f%% price increase" (config.BuyTriggerPercent * 100m)
+    printfn "   Take Profit: %.4f%% price increase" (config.TakeProfitPercent * 100m)
+    printfn "   Stop Loss: %.2f%% price decrease" (config.StopLossPercent * 100m)
+    printfn "   Max Position Size: %d shares" config.MaxPositionSize
+    printfn "═══════════════════════════════════════════════════════════════"
 
 let printConfigurationInstructions() =
     printfn """
@@ -98,16 +146,5 @@ To use real Alpaca market data, you need to set up your API credentials:
    If you want to test without real data, use:
    dotnet run test
 
-═══════════════════════════════════════════════════════════════
-    """
-
-let printConfigurationSummary (config: TradingConfig) =
-    printfn $"""
-⚙️  CONFIGURATION SUMMARY
-═══════════════════════════════════════════════════════════════
-🔑 API Configuration:
-   Alpaca API Key: {if config.AlpacaApiKey <> "your-api-key-here" then "✅ Configured" else "❌ Missing"}
-   Alpaca Secret Key: {if config.AlpacaSecretKey <> "your-secret-key-here" then "✅ Configured" else "❌ Missing"}
-   Paper Trading: {if config.UsePaperTrading then "✅ Enabled (Safe)" else "⚠️ Live Trading"}
 ═══════════════════════════════════════════════════════════════
     """
